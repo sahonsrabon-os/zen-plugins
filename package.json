@@ -1,0 +1,13 @@
+{
+  "name": "zen-bridge",
+  "version": "1.0.0",
+  "description": "Mission Barisal response bridge for OpenCode: OpenAI chunk normalization, evidence gate, and requirements injection.",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.0.22"
+  }
+}

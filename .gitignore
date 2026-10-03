@@ -1,0 +1,20 @@
+# Dependencies (recreated by `npm install`)
+node_modules/
+
+# Logs
+*.log
+nohup.out
+npm-debug.log*
+
+# Local secrets - never commit
+.env
+.env.*
+*.env
+
+# Installer scratch and backups
+opencode.json.tmp
+*.bak-*
+
+# OS noise
+.DS_Store
+Thumbs.db
