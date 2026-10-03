@@ -444,14 +444,14 @@ Verified result:
 ℹ fail 0
 
 ===== bengali-gate.probe.ts =====
-total 26, expectation mismatches: 0
+total 33, expectation mismatches: 0
 ```
 
-48 checks in total, 0 failures.
+55 checks in total, 0 failures.
 
 ### What the probe covers
 
-`test/bengali-gate.probe.ts` runs 26 Bengali and English cases through the
+`test/bengali-gate.probe.ts` runs 33 Bengali and English cases through the
 gate and asserts the verdict each one should get:
 
 - **A1–A16** — which claim phrases are recognised, including the language
@@ -461,6 +461,9 @@ gate and asserts the verdict each one should get:
   pattern must match: ZWJ, ZWNJ, non-breaking space, double space, NFD, NFC.
 - **C1–C3** — an honest confession must override a claim, including when the
   confession itself carries a ZWJ or a non-breaking space.
+- **D1–D7** — backtick pseudo-proof: a bare span such as `` `something` `` is
+  no longer evidence, while a file reference, `file:line`, line range or test
+  output inside backticks still is.
 
 The probe's expectations are stated as a principle, not fitted to the code:
 a claim is a claim regardless of the characters used to write it, and a
@@ -534,12 +537,18 @@ The Bengali patterns are generated from the words themselves rather than
 transcribed by hand, and every one is exercised by
 `test/bengali-gate.probe.ts`.
 
-**Known limitation.** Any backtick-delimited span satisfies the built-in proof
-pattern, so a model can pass the gate by emitting `` `something` `` instead of a
-real `file.ts:12` reference. Unit and transport-level blocking are proven, but a
-determined model can still slip a backtick pseudo-proof through a live session.
-Tightening this to file/line and test-output patterns only is a deliberate,
-backward-compatible change if you want a stricter gate.
+**Backtick pseudo-proof — fixed.** The built-in backtick pattern used to
+accept any delimited span, so a model could pass the gate by emitting
+`` `something` `` instead of a real `file.ts:12` reference. It now satisfies
+the gate only when the span itself carries a checkable reference: a file with
+an extension (`` `handler.ts` ``, `` `src/app.ts:42` ``) or test output
+(`` `424 pass` ``). A bare symbol such as `` `buildFinalMessages` `` is
+decoration, not evidence, and is blocked like any other unproven claim.
+Cases D1–D7 in `test/bengali-gate.probe.ts` hold this in place.
+
+What remains true is the honest limit of any pattern-based gate: it checks
+the shapes it knows about, and a response that cites a real-looking
+`file.ts:12` it never opened is not detectable from the text alone.
 
 ---
 
@@ -563,7 +572,7 @@ zen-plugins/
 └── test/
     ├── bridge.test.ts          13 tests: gate, normalizer, transport
     ├── runtime-log.test.ts     9 tests: logging, config, probing
-    └── bengali-gate.probe.ts   26-case coverage probe, prints a report
+    └── bengali-gate.probe.ts   33-case coverage probe, prints a report
 ```
 
 `index.ts` stays at the repository root because that is the path OpenCode
@@ -573,14 +582,14 @@ resolves from the `plugins` array; everything else lives under `src/` or
 | File | Lines | Responsibility |
 |------|-------|----------------|
 | `index.ts` | 138 | Plugin definition, `context` and `http.response` hooks, runtime bootstrap |
-| `src/evidence-gate.ts` | 242 | Evidence, claim, and confession patterns, plus match-time normalisation |
+| `src/evidence-gate.ts` | 245 | Evidence, claim, and confession patterns, plus match-time normalisation |
 | `src/transport-gate.ts` | 249 | Incremental SSE parsing and gating |
 | `src/platin-normalizer.ts` | 127 | Chunk normalization and blocked-chunk rebuild |
 | `src/requirements.ts` | 19 | Requirement text appended to prompts |
 | `src/runtime-log.ts` | 121 | Boot log, config read, read-only connection probe |
 | `test/bridge.test.ts` | 140 | 13 tests |
 | `test/runtime-log.test.ts` | 174 | 9 tests |
-| `test/bengali-gate.probe.ts` | 91 | 26-case coverage probe |
+| `test/bengali-gate.probe.ts` | 109 | 33-case coverage probe |
 
 ---
 

@@ -44,8 +44,11 @@ const EVIDENCE_PATTERNS: RegExp[] = [
   /\b\d+\s*(?:pass|passed|fail|failed|error|errors|tests?|ok)\b/i,
   // "exit code 0", "exit 0"
   /\bexit(?:ed)?\s+(?:with\s+)?(?:code\s+)?0\b/i,
-  // inline code / quoted symbols
-  /`[^`\n]{2,}`/,
+  // Inline code that carries a checkable reference: `handler.ts`,
+  // `src/app.ts:42`, `424 pass`. A bare `symbolName` is decoration, not
+  // evidence, and no longer satisfies the gate — otherwise a response can
+  // be waved through by emitting any backtick span at all.
+  /`[^`\n]*(?:\.\w{1,6}(?::\d+)?|\b\d+\s*(?:pass|passed|fail|failed|ok|tests?|errors?)\b)[^`\n]*`/,
   // explicit test-run references
   /\b(?:npm test|test suite|unit test|integration test|ran the tests?)\b/i,
 ]

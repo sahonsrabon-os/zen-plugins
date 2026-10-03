@@ -20,6 +20,9 @@
  * for "deleted" with ja (U+099C) instead of cha (U+099B), so it could
  * never have matched any correct pattern.
  *
+ * v4 closes the backtick loophole: a bare span such as `something` is no
+ * longer evidence, while a file reference, file:line, line range or test
+ * output inside backticks still is. Section D covers it.
  * ASCII-only source; all Bengali text is written as \u escape sequences.
  *
  * ASCII-only source; all Bengali text is written as \u escape sequences.
@@ -38,6 +41,11 @@ const TAIL = " here is the rest of the report body text to stay long enough for 
 const SPAN = "\u09B8\u09AE\u09BE\u09A7\u09BE\u09A8 \u0995\u09B0\u09C7\u099B\u09BF" // "samadhan korechi"
 
 const NO_PROOF = "\u0986\u09AE\u09BE\u09B0 \u0995\u09BE\u099B\u09C7 \u09AA\u09CD\u09B0\u09AE\u09BE\u09A3 \u09A8\u09C7\u0987" // "amar kache proman nei"
+
+// A claim long enough to clear minLength and certain to register as a claim,
+// so every D-case varies only the evidence offered for it.
+const CLAIM = "I fixed the bug in the module and the issue is now fully resolved for everyone."
+
 
 type Case = { label: string; text: string; expect: "PASS" | "BLOCK" }
 
@@ -73,6 +81,16 @@ const cases: Case[] = [
   { label: "C1  claim + confession", text: SPAN + " ... " + NO_PROOF, expect: "PASS" },
   { label: "C2  confession with ZWJ inside", text: SPAN + " ... " + NO_PROOF.replace("\u09AA\u09CD\u09B0", "\u09AA\u200D\u09CD\u09B0"), expect: "PASS" },
   { label: "C3  confession with NBSP inside", text: SPAN + " ... " + NO_PROOF.replace(" ", "\u00A0"), expect: "PASS" },
+  // --- D. backtick pseudo-proof: a span alone is not evidence -------------
+  // Regression cover for the documented known limitation: any backtick span
+  // used to satisfy the gate, so `something` waved a claim through.
+  { label: "D1  bare backtick span", text: CLAIM + " Evidence: `something`.", expect: "BLOCK" },
+  { label: "D2  bare symbol in backticks", text: CLAIM + " Evidence: `buildFinalMessages`.", expect: "BLOCK" },
+  { label: "D3  claim sentence in backticks", text: CLAIM + " Evidence: `I fixed it`.", expect: "BLOCK" },
+  { label: "D4  file reference in backticks", text: CLAIM + " Evidence: `handler.ts`.", expect: "PASS" },
+  { label: "D5  file:line in backticks", text: CLAIM + " Evidence: `src/app.ts:42`.", expect: "PASS" },
+  { label: "D6  test output in backticks", text: CLAIM + " Evidence: `424 pass`.", expect: "PASS" },
+  { label: "D7  line range in backticks", text: CLAIM + " Evidence: `lines 12-14`.", expect: "PASS" },
 ]
 
 console.log("RESULT  MATCH   CASE                                        REASON")
