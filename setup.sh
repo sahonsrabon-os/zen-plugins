@@ -345,28 +345,36 @@ verify() {
     return 0
   fi
 
-  # The CLI may answer with an empty body while its background service warms
-  # up, so retry once before concluding anything.
-  local out="" attempt
-  for attempt in 1 2; do
+  # The CLI's background service can answer from a cold start, either with an
+  # empty body or with a premature "No plugins found". Retry before trusting a
+  # negative answer, so a warm-up hiccup is never reported as a real failure.
+  local out="" attempt found=0
+  for attempt in 1 2 3; do
     out="$("$cli" plugin list 2>&1)" || out=""
-    if [ -n "$out" ]; then
+    if printf '%s' "$out" | grep -q 'zen-bridge'; then
+      found=1
       break
     fi
     sleep 1
   done
 
-  if [ -z "$out" ]; then
-    warn "'$cli plugin list' returned no output (service may still be starting)."
-    warn " Verify manually later with:  $cli plugin list"
-    return 0
-  fi
-  if printf '%s' "$out" | grep -q 'zen-bridge'; then
+  if [ "$found" -eq 1 ]; then
     ok "plugin registered: zen-bridge"
+  elif [ -z "$out" ]; then
+    warn "'$cli plugin list' returned no output after 3 attempts."
+    warn "Verify manually later with:  $cli plugin list"
   else
     warn "zen-bridge not listed by '$cli plugin list'. Output was:"
     printf '%s\n' "$out" >&2
-    warn " Check that 'plugins' in $CONFIG_FILE contains: $PLUGIN_PATH"
+    warn "Check that 'plugins' in $CONFIG_FILE contains: $PLUGIN_PATH"
+  fi
+
+  # 'plugin list' reads OpenCode's own config, which may not be the file this
+  # run wrote. Say so instead of letting the two disagree silently.
+  local default_cfg="$HOME/.opencode/opencode.json"
+  if [ "$CONFIG_FILE" != "$default_cfg" ]; then
+    info "'plugin list' reads $default_cfg, not the custom file $CONFIG_FILE."
+    info "To verify this file, copy it there or re-run without --dir."
   fi
 }
 verify

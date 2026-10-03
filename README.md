@@ -512,9 +512,19 @@ Install it with `apt install python3`, `dnf install python3`, or
 The plugin dependency `@opencode/plugin` will be missing and the plugin will
 not load. Install Node.js, then run `npm install` in this folder.
 
-**`zen-bridge not listed by 'opencode plugin list'`**
-The `plugins` array does not contain this checkout's absolute path. Run
-`./setup.sh` again, or add the path by hand.
+**`zen-bridge not listed by 'opencode plugin list'`, or it says `No plugins found`**
+Three causes, in the order to check them:
+
+1. **Cold start.** The OpenCode background service answers empty or with a
+   premature `No plugins found` while it is warming up. This is a false
+   negative, not a real failure. Wait a second and run the command again.
+   `setup.sh` already retries three times for this reason.
+2. **Missing path.** The `plugins` array does not contain this checkout's
+   absolute path. Run `./setup.sh` again, or add the path by hand.
+3. **Custom `--dir`.** `plugin list` always reads OpenCode's own config
+   (`~/.opencode/opencode.json`). If you installed with `--dir` pointing
+   elsewhere, it is reading a different file than the one you just wrote, so
+   the two will not agree. `setup.sh` prints a note when this happens.
 
 **Server reachable but no models appear**
 Confirm the URL ends in `/v1` and that `GET <url>/models` returns HTTP 200.
