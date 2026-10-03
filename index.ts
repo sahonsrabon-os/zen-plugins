@@ -17,10 +17,11 @@
  */
 
 import { Plugin } from "@opencode/plugin"
-import { EvidenceGate } from "./evidence-gate.ts"
-import { REQUIREMENTS } from "./requirements.ts"
-import { createGateTransform } from "./transport-gate.ts"
-import { buildBlockedChunk, firstChoiceContent, normalizeChatChunk, type Json } from "./platin-normalizer.ts"
+import { EvidenceGate } from "./src/evidence-gate.ts"
+import { REQUIREMENTS } from "./src/requirements.ts"
+import { createGateTransform } from "./src/transport-gate.ts"
+import { buildBlockedChunk, firstChoiceContent, normalizeChatChunk, type Json } from "./src/platin-normalizer.ts"
+import { logRuntime, readBaseUrl, verifyConnection } from "./src/runtime-log.ts"
 
 const PROVIDER_ID = "missionbarisal"
 const log = (message: string): void => console.log(`[zen-bridge] ${message}`)
@@ -107,7 +108,26 @@ export default Plugin.define({
       ),
     )
 
-    log(`bridge active for provider "${PROVIDER_ID}"`)
+    // (0) Runtime artefacts — written the moment the server boots, before
+    //     any hook fires. Directory creation, the boot line and the
+    //     connection probe are all failure-tolerant: if the runtime log is
+    //     unwritable or the server is down, the bridge still starts.
+    const bootLog = logRuntime(`boot provider=${PROVIDER_ID}`)
+    const baseUrl = readBaseUrl(PROVIDER_ID)
+    if (baseUrl === null) {
+      logRuntime("connection skipped: no baseURL in config")
+      log(`bridge active for provider "${PROVIDER_ID}" (connection not probed: no baseURL)`)
+    } else {
+      void verifyConnection(baseUrl).then((check) => {
+        const status = check.status === null ? "-" : String(check.status)
+        const detail = check.error === null ? "" : ` error=${check.error}`
+        logRuntime(`connection ${check.ok ? "OK" : "FAILED"} ${check.url} status=${status} ${check.ms}ms${detail}`)
+        log(`connection probe: ${check.ok ? "OK" : "FAILED"} ${check.url} status=${status} ${check.ms}ms${detail}`)
+      })
+      log(`bridge active for provider "${PROVIDER_ID}"`)
+    }
+
+    log(`runtime log: ${bootLog ?? "unavailable (logging skipped)"}`)
 
     return () => {
       for (const registration of registrations) {

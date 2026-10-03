@@ -47,13 +47,17 @@ and verifies it loaded.
 
 | # | Stage | Module | Purpose |
 |---|-------|--------|---------|
-| 1 | Request | `requirements.ts` | Appends Mission Barisal's output requirements to the prompt so every agent answers the same way. |
-| 2 | Response | `platin-normalizer.ts` | Converts provider SSE payloads into authentic `chat.completion.chunk` objects. Unknown payloads pass through untouched. |
-| 3 | Response | `evidence-gate.ts` | Blocks a substantive claim that carries no verifiable proof and replaces it with an honest message. |
-| 4 | Response | `transport-gate.ts` | Applies the gate to the raw SSE stream, so a blocked answer is caught whether the server sends JSON or plain text. |
+| 1 | Request | `src/requirements.ts` | Appends Mission Barisal's output requirements to the prompt so every agent answers the same way. |
+| 2 | Response | `src/platin-normalizer.ts` | Converts provider SSE payloads into authentic `chat.completion.chunk` objects. Unknown payloads pass through untouched. |
+| 3 | Response | `src/evidence-gate.ts` | Blocks a substantive claim that carries no verifiable proof and replaces it with an honest message. |
+| 4 | Response | `src/transport-gate.ts` | Applies the gate to the raw SSE stream, so a blocked answer is caught whether the server sends JSON or plain text. |
+| 5 | Startup | `src/runtime-log.ts` | When the server boots, creates the runtime directory, appends a boot line, and probes the server with a read-only GET so the log records whether it answered. |
 
-Because those four logic modules have no I/O, no shared state, and no side
-effects, the whole gate can be unit-tested with no server running.
+Rows 1–4 have no I/O, no shared state and no side effects, so the whole gate
+can be unit-tested with no server running. Row 5 is the only module that
+touches the disk or the network; its suite runs against a temporary directory
+and a local HTTP server it owns, never against your real home directory or
+the real Mission Barisal server.
 
 ---
 
@@ -61,7 +65,7 @@ effects, the whole gate can be unit-tested with no server running.
 
 | Requirement | Minimum | Notes |
 |-------------|---------|-------|
-| Node.js | 22.6 | Type stripping is needed to run `bridge.test.ts` directly. Node 24 is recommended. |
+| Node.js | 22.6 | Type stripping is needed to run `test/bridge.test.ts` directly. Node 24 is recommended. |
 | OpenCode | 2.x | The plugin uses the `Plugin.define` API. |
 | Mission Barisal server | 3.x | Any OpenAI-compatible endpoint works; agent names assume Mission Barisal. |
 | python3 | 3.8 | Used by `setup.sh` to merge JSON safely. |
@@ -82,7 +86,7 @@ cd zen-plugins
 ./setup.sh
 
 # 3. Confirm the test suite passes
-node bridge.test.ts
+node test/bridge.test.ts
 ```
 
 Then restart OpenCode so it reloads the configuration.
@@ -343,7 +347,7 @@ The plugin writes one line per gated response to the OpenCode log:
 **4. Run the test suite**
 
 ```bash
-node bridge.test.ts
+node test/bridge.test.ts
 ```
 
 ```text
@@ -375,34 +379,92 @@ Re-running with the same URL is a no-op.
 
 ---
 
+## Runtime log
+
+Every time the OpenCode server starts it loads this plugin, and the plugin
+records that boot:
+
+```text
+~/.opencode/
+├── opencode.json            written by setup.sh; the plugin only reads it
+└── zen-bridge-runtime.log   appended by the plugin at startup
+```
+
+The directory is created automatically if it is missing. The log is
+append-only, one line per boot plus one for the connection check:
+
+```text
+2026-10-03T09:14:22.118Z boot provider=missionbarisal
+2026-10-03T09:14:22.171Z connection OK http://localhost:5000/v1/models status=200 6ms
+```
+
+If the config holds no `baseURL` the probe is skipped and the reason is
+logged instead. If the server refuses the connection the line reads
+`connection FAILED` together with the error text. Either way the bridge
+still starts: the probe is diagnostic, never a gate on startup.
+
+Watch it live with:
+
+```bash
+tail -f ~/.opencode/zen-bridge-runtime.log
+```
+
+The file records timestamps, the provider id, the probed URL, its HTTP
+status and its latency. It holds no tokens and no request or response
+bodies, and it lives outside this repository.
+
+---
+
 ## Running the tests
 
 ```bash
 cd zen-plugins
-node bridge.test.ts
+
+node test/bridge.test.ts         # gate, normalizer, transport
+node test/runtime-log.test.ts    # boot log, config read, connection probe
+node test/bengali-gate.probe.ts  # coverage report, not pass/fail
 ```
 
-The suite is dependency-free and uses Node's built-in test runner. It covers the
-evidence gate, the SSE transport gate, the chunk normalizer, and blocked-chunk
-reconstruction:
+All three are dependency-free and use Node's built-in test runner. The first
+two suites fail the run on any broken assertion; the probe is a report that
+prints one row per case and ends with a mismatch count, which is how coverage
+gaps are found rather than hidden.
+
+Verified result:
 
 ```text
-✔ gate passes a claim with file:line evidence
-✔ gate passes honest confession of no proof
-✔ gate passes short/trivial chatter
-✔ gate blocks Bengali claim without evidence
-✔ gate passes Bengali honest confession
-✔ normalizer maps flat text payload to OpenAI chunk
-✔ normalizer preserves standard chunks
-✔ blocked chunk keeps structure and carries truth message
-✔ transport: proven SSE passes through unchanged in order
-✔ transport: unproven claim is replaced with honest message
-✔ transport: non-JSON data and raw lines pass through
-✔ transport: stream without [DONE] still finalizes gate
-...
+===== bridge.test.ts =====
+ℹ tests 13
 ℹ pass 13
 ℹ fail 0
+
+===== runtime-log.test.ts =====
+ℹ tests 9
+ℹ pass 9
+ℹ fail 0
+
+===== bengali-gate.probe.ts =====
+total 26, expectation mismatches: 0
 ```
+
+48 checks in total, 0 failures.
+
+### What the probe covers
+
+`test/bengali-gate.probe.ts` runs 26 Bengali and English cases through the
+gate and asserts the verdict each one should get:
+
+- **A1–A16** — which claim phrases are recognised, including the language
+  parity rule: English `installed` / `renamed` / `wrote` / `deleted` are
+  blocked, so their Bengali equivalents must be blocked too.
+- **B1–B7** — invisible characters placed strictly inside the span the
+  pattern must match: ZWJ, ZWNJ, non-breaking space, double space, NFD, NFC.
+- **C1–C3** — an honest confession must override a claim, including when the
+  confession itself carries a ZWJ or a non-breaking space.
+
+The probe's expectations are stated as a principle, not fitted to the code:
+a claim is a claim regardless of the characters used to write it, and a
+confession is a confession regardless of them as well.
 
 ---
 
@@ -437,6 +499,41 @@ The default minimum length is 40 characters, exported as
 `DEFAULT_MIN_LENGTH`. Pass `extraPatterns` through `EvidenceGateOptions` to add
 project-specific proof markers.
 
+### Match-time normalisation
+
+Bengali text routinely carries characters that mean nothing yet defeat a
+literal pattern match. Before matching, the gate works on a **copy** of the
+response with the following folded away:
+
+| Folded | Unicode | Why it appears |
+|--------|---------|----------------|
+| Zero-width joiner, zero-width non-joiner | U+200D, U+200C | inserted between consonants and before i-matras |
+| Zero-width space, directional marks, BOM | U+200B–U+200F, U+2060, U+FEFF | editor and paste artefacts |
+| Non-breaking space | U+00A0 | pasted and typeset text |
+| Runs of whitespace | — | double space, tab, newline |
+
+The original string is never rewritten. Normalisation applies only to the
+copy used for matching, so what the user is shown is untouched.
+
+This matters in both directions. Without it, a claim written with a ZWJ was
+passed as `PASS`, while an honest confession written with a ZWJ was
+`BLOCKED` — the worst possible inversion, where honesty is punished and an
+unproven claim is rewarded. Normalising the whole input rather than
+patching individual patterns fixes every pattern at once.
+
+### Language parity
+
+English claim verbs and their Bengali equivalents are held at the same
+coverage. `installed`, `renamed`, `wrote`, `deleted`, `refactored`,
+`implemented`, `configured`, `enabled` and the rest are claims, and so are
+`install korechi`, `rename korechi`, `likhechi`, `muliye felechi`,
+`refactor korechi`, `implement korechi`, `configar korechi` and `chalu
+korechi`. Language must not decide whether an unproven claim is blocked.
+
+The Bengali patterns are generated from the words themselves rather than
+transcribed by hand, and every one is exercised by
+`test/bengali-gate.probe.ts`.
+
 **Known limitation.** Any backtick-delimited span satisfies the built-in proof
 pattern, so a model can pass the gate by emitting `` `something` `` instead of a
 real `file.ts:12` reference. Unit and transport-level blocking are proven, but a
@@ -457,21 +554,33 @@ zen-plugins/
 ├── package.json
 ├── package-lock.json
 ├── index.ts                plugin entry: hooks + wiring
-├── evidence-gate.ts        claim / proof / confession verdicts
-├── transport-gate.ts       SSE stream wrapper
-├── platin-normalizer.ts    provider payload -> OpenAI chunk
-├── requirements.ts         output requirement text
-└── bridge.test.ts          13 tests, Node built-in runner
+├── src/
+│   ├── evidence-gate.ts        claim / proof / confession verdicts
+│   ├── transport-gate.ts       SSE stream wrapper
+│   ├── platin-normalizer.ts    provider payload -> OpenAI chunk
+│   ├── requirements.ts         output requirement text
+│   └── runtime-log.ts          boot log, config read, connection probe
+└── test/
+    ├── bridge.test.ts          13 tests: gate, normalizer, transport
+    ├── runtime-log.test.ts     9 tests: logging, config, probing
+    └── bengali-gate.probe.ts   26-case coverage probe, prints a report
 ```
+
+`index.ts` stays at the repository root because that is the path OpenCode
+resolves from the `plugins` array; everything else lives under `src/` or
+`test/`.
 
 | File | Lines | Responsibility |
 |------|-------|----------------|
-| `index.ts` | 118 | Plugin definition, `context` and `http.response` hooks |
-| `evidence-gate.ts` | 166 | Evidence, claim, and confession patterns |
-| `transport-gate.ts` | 249 | Incremental SSE parsing and gating |
-| `platin-normalizer.ts` | 127 | Chunk normalization and blocked-chunk rebuild |
-| `requirements.ts` | 19 | Requirement text appended to prompts |
-| `bridge.test.ts` | 140 | Test suite |
+| `index.ts` | 138 | Plugin definition, `context` and `http.response` hooks, runtime bootstrap |
+| `src/evidence-gate.ts` | 242 | Evidence, claim, and confession patterns, plus match-time normalisation |
+| `src/transport-gate.ts` | 249 | Incremental SSE parsing and gating |
+| `src/platin-normalizer.ts` | 127 | Chunk normalization and blocked-chunk rebuild |
+| `src/requirements.ts` | 19 | Requirement text appended to prompts |
+| `src/runtime-log.ts` | 121 | Boot log, config read, read-only connection probe |
+| `test/bridge.test.ts` | 140 | 13 tests |
+| `test/runtime-log.test.ts` | 174 | 9 tests |
+| `test/bengali-gate.probe.ts` | 91 | 26-case coverage probe |
 
 ---
 
@@ -479,13 +588,24 @@ zen-plugins/
 
 Facts verified against the source, not assumed:
 
-- The plugin makes **no network calls of its own**. It has no `fetch`, no HTTP
-  client, and no outbound socket. All traffic to the Mission Barisal server
-  flows through OpenCode's own provider driver.
-- It reads **no environment variables and no config files**. The only imports
-  are `@opencode/plugin` and its four sibling modules.
-- It **writes nothing**: no disk writes, no shell execution, no file edits. Its
-  sole side effect is one `console.log` line per gated response.
+- It makes **exactly one network call of its own**: a read-only
+  `GET <baseURL>/models` issued once during plugin setup, solely so the boot
+  log records whether the Mission Barisal server is reachable. Nothing is
+  ever POSTed, and no write method is used against the server. Every other
+  byte of traffic flows through OpenCode's own provider driver. The probe
+  carries a 5-second timeout, so an unreachable server cannot delay startup.
+- It reads **one config file, read-only**: `~/.opencode/opencode.json`, and
+  only the `providers.missionbarisal.settings.baseURL` value. It reads **no
+  environment variables** and never modifies or rewrites the config.
+- It **writes one file**: it appends a timestamped line to
+  `~/.opencode/zen-bridge-runtime.log`, creating `~/.opencode/` first if that
+  directory is missing. There is no shell execution, no file edit, and no
+  config write. Logging failures are swallowed and return `null` rather than
+  being thrown, so an unwritable disk degrades the feature instead of
+  breaking the bridge.
+- The boot log holds timestamps, the provider id, the probed URL, its status
+  and its latency. It holds **no tokens and no request or response bodies**.
+  It lives outside this repository, so it is not committed by accident.
 - It filters on `providerID === "missionbarisal"`, so responses from other
   providers are never inspected or rewritten.
 - No credentials are stored in this repository. Nothing here needs a token,

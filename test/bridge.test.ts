@@ -5,9 +5,9 @@
 
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { EvidenceGate } from "./evidence-gate.ts"
-import { buildBlockedChunk, firstChoiceContent, normalizeChatChunk } from "./platin-normalizer.ts"
-import { createGateTransform } from "./transport-gate.ts"
+import { EvidenceGate } from "../src/evidence-gate.ts"
+import { buildBlockedChunk, firstChoiceContent, normalizeChatChunk } from "../src/platin-normalizer.ts"
+import { createGateTransform } from "../src/transport-gate.ts"
 
 const gate = new EvidenceGate()
 
